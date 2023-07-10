@@ -28,8 +28,10 @@ object MlbApi extends ZIOAppDefault {
         res: Response = latestGameResponse(game)
       } yield res
     case Method.GET -> Root / "game" / "predict" / homeTeam / awayTeam =>
-      // FIXME : implement correct logic and response
-      ZIO.succeed(Response.text(s"$homeTeam vs $awayTeam win probability: 0.0"))
+      for {
+        game: Option[Prediction] <- getProbaWinTeam(HomeTeam(homeTeam), AwayTeam(awayTeam))
+        res: Response = latestGameResponse(game)
+      } yield res
     case Method.GET -> Root / "games" / "count" =>
       for {
         count: Option[Int] <- count
@@ -57,6 +59,7 @@ object ApiService {
 
   import zio.json.EncoderOps
   import Game._
+  import Prediction._
 
   def countResponse(count: Option[Int]): Response = {
     count match
@@ -122,6 +125,14 @@ object DataService {
     transaction {
       selectOne(
         sql"SELECT date, season_year, playoff_round, home_team, away_team FROM games WHERE home_team = ${HomeTeam.unapply(homeTeam)} AND away_team = ${AwayTeam.unapply(awayTeam)} ORDER BY date DESC LIMIT 1".as[Game]
+      )
+    }
+  }
+
+  def getProbaWinTeam(homeTeam: HomeTeam, awayTeam: AwayTeam): ZIO[ZConnectionPool, Throwable, Option[Prediction]] = {
+    transaction {
+      selectOne(
+        sql"SELECT date, season, homeTeam, awayTeam, homeTeamEloProb, homeTeamRatingProb FROM Prediction WHERE homeTeam = ${HomeTeam.unapply(homeTeam)} and awayTeam = ${AwayTeam.unapply(awayTeam)} ORDER BY date DESC LIMIT 1".as[Prediction]
       )
     }
   }
