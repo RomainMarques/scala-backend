@@ -38,8 +38,10 @@ object MlbApi extends ZIOAppDefault {
     case Method.GET -> Root / "games" / "history" / homeTeam =>
       import zio.json.EncoderOps
       import Game._
-      // FIXME: implement correct database request
-      ZIO.succeed(Response.json(games.toJson).withStatus(Status.Ok))
+      for {
+        allGames: Option[Game] <- getAllGamesOfHomeTeam(HomeTeam(homeTeam))
+        res: Response = Response.json(allGames.toJson).withStatus(Status.Ok)
+      } yield res
     case _ =>
       ZIO.succeed(Response.text("Not Found").withStatus(Status.NotFound))
   }.withDefaultErrorResponse
@@ -122,6 +124,14 @@ object DataService {
     transaction {
       selectOne(
         sql"SELECT date, season_year, playoff_round, home_team, away_team FROM games WHERE home_team = ${HomeTeam.unapply(homeTeam)} AND away_team = ${AwayTeam.unapply(awayTeam)} ORDER BY date DESC LIMIT 1".as[Game]
+      )
+    }
+  }
+
+  def getAllGamesOfHomeTeam(homeTeam: HomeTeam): ZIO[ZConnectionPool, Throwable, Option[Game]] = {
+    transaction {
+      selectOne(
+        sql"SELECT date, season_year, playoff_round, home_team, away_team FROM games WHERE home_team = ${HomeTeam.unapply(homeTeam)} ORDER BY date DESC".as[Game]
       )
     }
   }

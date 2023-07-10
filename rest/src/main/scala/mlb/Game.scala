@@ -142,5 +142,6 @@ object Game {
 
 val games: List[Game] = List(
   Game(GameDate(LocalDate.parse("2021-10-03")), SeasonYear(2023), None, HomeTeam("ATL"), AwayTeam("NYM")),
+  Game(GameDate(LocalDate.parse("2021-10-03")), SeasonYear(2023), None, HomeTeam("ATL"), AwayTeam("MIA")),
   Game(GameDate(LocalDate.parse("2021-10-03")), SeasonYear(2023), None, HomeTeam("STL"), AwayTeam("CHC"))
 )
