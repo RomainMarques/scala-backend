@@ -30,7 +30,7 @@ object MlbApi extends ZIOAppDefault {
     case Method.GET -> Root / "game" / "predict" / homeTeam / awayTeam =>
       for {
         game: Option[Prediction] <- getProbaWinTeam(HomeTeam(homeTeam), AwayTeam(awayTeam))
-        res: Response = latestGameResponse(game)
+        res: Response = latestPredictionResponse(game)
       } yield res
     case Method.GET -> Root / "games" / "count" =>
       for {
@@ -71,6 +71,12 @@ object ApiService {
     println(game)
     game match
       case Some(g) => Response.json(g.toJson).withStatus(Status.Ok)
+      case None => Response.text("No game found in historical data").withStatus(Status.NotFound)
+  }
+
+  def latestPredictionResponse(predi: Option[Prediction]): Response = {
+    predi match
+      case Some(p) => Response.text(s"${p.homeTeam} vs ${p.awayTeam} winning probability : ${p.mean()}").withStatus(Status.Ok)
       case None => Response.text("No game found in historical data").withStatus(Status.NotFound)
   }
 }
