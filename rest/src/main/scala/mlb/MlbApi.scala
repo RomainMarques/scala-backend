@@ -76,7 +76,7 @@ object ApiService {
 
   def latestPredictionResponse(predi: Option[Prediction]): Response = {
     predi match
-      case Some(p) => Response.text(s"${p.homeTeam} vs ${p.awayTeam} winning probability : ${p.mean()}").withStatus(Status.Ok)
+      case Some(p) => Response.text(s"${p.homeTeam} vs ${p.awayTeam} winning probability : ${p.homeTeamProb()}").withStatus(Status.Ok)
       case None => Response.text("No game found in historical data").withStatus(Status.NotFound)
   }
 }
