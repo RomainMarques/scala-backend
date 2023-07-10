@@ -60,6 +60,9 @@ object Prediction {
   def unapply(prediction: Prediction): (GameDate, SeasonYear, HomeTeam, AwayTeam, HomeTeamEloProb, HomeTeamRatingProb) =
     (prediction.date, prediction.season, prediction.homeTeam, prediction.awayTeam, prediction.homeTeamEloProb, prediction.homeTeamRatingProb)
 
+  def predictionMean(prediction: Prediction): Float =
+    (HomeTeamEloProb.unapply(prediction.homeTeamEloProb) + HomeTeamRatingProb.unapply(prediction.homeTeamRatingProb)) / 2
+
   // a custom decoder from a tuple
   type Row = (String, Int, String, String, Float, Float)
 
