@@ -1,10 +1,11 @@
 package mlb
 
-import zio._
-import zio.jdbc._
-import zio.http._
+import zio.*
+import zio.jdbc.*
+import zio.http.*
 
 import java.sql.Date
+import scala.annotation.tailrec
 
 object MlbApi extends ZIOAppDefault {
 
@@ -39,8 +40,8 @@ object MlbApi extends ZIOAppDefault {
       import zio.json.EncoderOps
       import Game._
       for {
-        allGames: Option[Game] <- getAllGamesOfHomeTeam(HomeTeam(homeTeam))
-        res: Response = Response.json(allGames.toJson).withStatus(Status.Ok)
+        allGames: List[Game] <- getAllGamesOfHomeTeam(HomeTeam(homeTeam))
+        res: Response = allGameResponse(allGames)
       } yield res
     case _ =>
       ZIO.succeed(Response.text("Not Found").withStatus(Status.NotFound))
@@ -71,6 +72,16 @@ object ApiService {
     game match
       case Some(g) => Response.json(g.toJson).withStatus(Status.Ok)
       case None => Response.text("No game found in historical data").withStatus(Status.NotFound)
+  }
+
+  def allGameResponse(games: List[Game]): Response = {
+    @tailrec
+    def getAllGames(games: List[Game], acc: String): Response = {
+      games match
+        case x::xs => getAllGames(xs, acc + x.toJson + "\n")
+        case Nil => Response.json(acc).withStatus(Status.Ok)
+    }
+    getAllGames(games, "")
   }
 }
 
@@ -128,11 +139,11 @@ object DataService {
     }
   }
 
-  def getAllGamesOfHomeTeam(homeTeam: HomeTeam): ZIO[ZConnectionPool, Throwable, Option[Game]] = {
+  def getAllGamesOfHomeTeam(homeTeam: HomeTeam): ZIO[ZConnectionPool, Throwable, List[Game]] = {
     transaction {
-      selectOne(
+      selectAll(
         sql"SELECT date, season_year, playoff_round, home_team, away_team FROM games WHERE home_team = ${HomeTeam.unapply(homeTeam)} ORDER BY date DESC".as[Game]
-      )
+      ).map(_.toList)
     }
   }
 }
