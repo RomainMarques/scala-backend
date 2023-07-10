@@ -20,6 +20,7 @@ object MlbApi extends ZIOAppDefault {
 
   val endpoints: App[ZConnectionPool] = Http.collectZIO[Request] {
     case Method.GET -> Root / "init" =>
+      //FIXME: Delete if the init was done at the start of the application
       ZIO.succeed(Response.text("Not Implemented").withStatus(Status.NotImplemented))
     case Method.GET -> Root / "game" / "latest" / homeTeam / awayTeam =>
       for {
