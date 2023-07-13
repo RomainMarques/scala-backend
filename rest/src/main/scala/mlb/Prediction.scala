@@ -93,21 +93,3 @@ object Prediction {
     }
 }
 
-val predictions : List[Prediction] = List (
-  Prediction(
-    GameDate(LocalDate.parse("2021-04-01")),
-    SeasonYear(2021),
-    HomeTeam("TOR"),
-    AwayTeam("NYY"),
-    HomeTeamEloProb(0.5),
-    HomeTeamRatingProb(0.5)
-  ),
-  Prediction(
-    GameDate(LocalDate.parse("2021-04-02")),
-    SeasonYear(2021),
-    HomeTeam("TOR"),
-    AwayTeam("NYY"),
-    HomeTeamEloProb(0.4),
-    HomeTeamRatingProb(0.6)
-  )
-)

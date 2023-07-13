@@ -25,9 +25,6 @@ object MlbApi extends ZIOAppDefault {
   }.withDefaultErrorResponse
 
   val endpoints: App[ZConnectionPool] = Http.collectZIO[Request] {
-    case Method.GET -> Root / "init" =>
-      //FIXME: Delete if the init was done at the start of the application
-      ZIO.succeed(Response.text("Not Implemented").withStatus(Status.NotImplemented))
     case Method.GET -> Root / "game" / "latest" / homeTeam / awayTeam =>
       for {
         game: Option[Game] <- latest(HomeTeam(homeTeam), AwayTeam(awayTeam))
@@ -47,15 +44,14 @@ object MlbApi extends ZIOAppDefault {
       import zio.json.EncoderOps
       import Game._
       for {
-        allGames: List[Game] <- getAllGamesOfHomeTeam(HomeTeam(homeTeam))
-        res: Response = allGameResponse(allGames)
+        listGames: List[Game] <- getAllGamesOfHomeTeam(HomeTeam(homeTeam))
+        res: Response = allGameResponse(listGames)
       } yield res
     case _ =>
       ZIO.succeed(Response.text("Not Found").withStatus(Status.NotFound))
   }.withDefaultErrorResponse
 
   val appLogic: ZIO[ZConnectionPool & Server, Throwable, Unit] = for {
-    //test <- create *> initDB("/Users/romainmarques/Documents/GitHub/scala-backend/files/mlb_elo_latest.csv")
     _ <- createGames *> createPredictions *> initDB("/Users/romainmarques/Documents/GitHub/scala-backend/files/mlb_elo_latest.csv") *> selectEverything
     _ <- Server.serve[ZConnectionPool](static ++ endpoints)
     
@@ -102,10 +98,6 @@ object ApiService {
 }
 
 object DataService {
-
-  var gam = List[Game]()
-  var pred2 = List[Prediction]()
-
 
   val createZIOPoolConfig: ULayer[ZConnectionPoolConfig] =
     ZLayer.succeed(ZConnectionPoolConfig.default)
@@ -156,11 +148,7 @@ object DataService {
         .collectSome[Element]
         .grouped(2)
         .foreach(chunk => {
-          Console.printLine("chunk", chunk.toList)
-          gam = chunk.toList.map(line => line.game)
-          pred2 = chunk.toList.map(line => line.prediction)
-          Console.printLine("test2", games)
-          insertRows *> insertPred
+          insertGames(chunk.toList.map(line => line.game)) *> insertPredictions(chunk.toList.map(line => line.prediction))
           }
         )
       _ <- ZIO.succeed(source.close())
@@ -198,10 +186,8 @@ object DataService {
       }
   }
 
-  def insertRows: ZIO[ZConnectionPool, Throwable, UpdateResult] = {
-    Console.printLine("game", gam)
-    val rows: List[Game.Row] = gam.map(_.toRow)
-    Console.printLine("rows", rows)
+  def insertGames(allGames: List[Game]): ZIO[ZConnectionPool, Throwable, UpdateResult] = {
+    val rows: List[Game.Row] = allGames.map(_.toRow)
     transaction {
       insert(
         sql"INSERT INTO games(date, season_year, playoff_round, home_team, away_team)".values[Game.Row](rows)
@@ -209,9 +195,8 @@ object DataService {
     }
   }
 
-  def insertPred: ZIO[ZConnectionPool, Throwable, UpdateResult] = {
-    Console.printLine("pred", pred2)
-    val rows: List[Prediction.Row] = pred2.map(_.toRow)
+  def insertPredictions(allPredictions: List[Prediction]): ZIO[ZConnectionPool, Throwable, UpdateResult] = {
+    val rows: List[Prediction.Row] = allPredictions.map(_.toRow)
     transaction {
       insert(
         sql"INSERT INTO predictions(date, season, homeTeam, awayTeam, homeTeamEloProb, homeTeamRatingProb)".values[Prediction.Row](rows)
