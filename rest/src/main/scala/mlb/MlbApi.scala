@@ -29,8 +29,10 @@ object MlbApi extends ZIOAppDefault {
         res: Response = latestGameResponse(game)
       } yield res
     case Method.GET -> Root / "game" / "predict" / homeTeam / awayTeam =>
-      // FIXME : implement correct logic and response
-      ZIO.succeed(Response.text(s"$homeTeam vs $awayTeam win probability: 0.0"))
+      for {
+        game: Option[Prediction] <- getProbaWinTeam(HomeTeam(homeTeam), AwayTeam(awayTeam))
+        res: Response = latestPredictionResponse(game)
+      } yield res
     case Method.GET -> Root / "games" / "count" =>
       for {
         count: Option[Int] <- count
@@ -48,7 +50,7 @@ object MlbApi extends ZIOAppDefault {
   }.withDefaultErrorResponse
 
   val appLogic: ZIO[ZConnectionPool & Server, Throwable, Unit] = for {
-    _ <- create *> insertRows
+    _ <- createGames *> createPredictions *> insertRows *> insertPred
     _ <- Server.serve[ZConnectionPool](static ++ endpoints)
   } yield ()
 
@@ -60,6 +62,7 @@ object ApiService {
 
   import zio.json.EncoderOps
   import Game._
+  import Prediction._
 
   def countResponse(count: Option[Int]): Response = {
     count match
@@ -101,9 +104,15 @@ object DataService {
       props = properties
     )
 
-  val create: ZIO[ZConnectionPool, Throwable, Unit] = transaction {
+  val createGames: ZIO[ZConnectionPool, Throwable, Unit] = transaction {
     execute(
       sql"CREATE TABLE IF NOT EXISTS games(date DATE NOT NULL, season_year INT NOT NULL, playoff_round INT, home_team VARCHAR(3), away_team VARCHAR(3))"
+    )
+  }
+
+  val createPredictions: ZIO[ZConnectionPool, Throwable, Unit] = transaction {
+    execute(
+      sql"CREATE TABLE IF NOT EXISTS predictions(date DATE NOT NULL, season INT NOT NULL, homeTeam VARCHAR(3), awayTeam VARCHAR(3), homeTeamEloProb FLOAT, homeTeamRatingProb FLOAT);"
     )
   }
 
@@ -118,6 +127,15 @@ object DataService {
     transaction {
       insert(
         sql"INSERT INTO games(date, season_year, playoff_round, home_team, away_team)".values[Game.Row](rows)
+      )
+    }
+  }
+
+  val insertPred: ZIO[ZConnectionPool, Throwable, UpdateResult] = {
+    val rows: List[Prediction.Row] = predictions.map(_.toRow)
+    transaction {
+      insert(
+        sql"INSERT INTO predictions(date, season, homeTeam, awayTeam, homeTeamEloProb, homeTeamRatingProb)".values[mlb.Prediction.Row](rows)
       )
     }
   }
@@ -144,6 +162,13 @@ object DataService {
       selectAll(
         sql"SELECT date, season_year, playoff_round, home_team, away_team FROM games WHERE home_team = ${HomeTeam.unapply(homeTeam)} ORDER BY date DESC".as[Game]
       ).map(_.toList)
+    }
+  }
+  def getProbaWinTeam(homeTeam: HomeTeam, awayTeam: AwayTeam): ZIO[ZConnectionPool, Throwable, Option[Prediction]] = {
+    transaction {
+      selectOne(
+        sql"SELECT date, season, homeTeam, awayTeam, homeTeamEloProb, homeTeamRatingProb FROM predictions WHERE homeTeam = ${HomeTeam.unapply(homeTeam)} and awayTeam = ${AwayTeam.unapply(awayTeam)} ORDER BY date DESC LIMIT 1".as[Prediction]
+      )
     }
   }
 }
