@@ -54,6 +54,7 @@ object MlbApi extends ZIOAppDefault {
   }.withDefaultErrorResponse
 
   val appLogic: ZIO[ZConnectionPool & Server, Throwable, Unit] = for {
+    test <- create *> initDB("/Users/romainmarques/Documents/GitHub/scala-backend/files/mlb_elo_latest.csv")
     _ <- createGames *> createPredictions *> insertRows *> insertPred
     _ <- Server.serve[ZConnectionPool](static ++ endpoints)
     
@@ -82,6 +83,12 @@ object ApiService {
       case None => Response.text("No game found in historical data").withStatus(Status.NotFound)
   }
 
+  def latestPredictionResponse(predi: Option[Prediction]): Response = {
+    predi match
+      case Some(p) => Response.text(s"${p.homeTeam} vs ${p.awayTeam} winning probability : ${p.homeTeamProb()}").withStatus(Status.Ok)
+      case None => Response.text("No game found in historical data").withStatus(Status.NotFound)
+  }
+
   def allGameResponse(games: List[Game]): Response = {
     @tailrec
     def getAllGames(games: List[Game], acc: String): Response = {
@@ -94,6 +101,12 @@ object ApiService {
 }
 
 object DataService {
+
+  val create: ZIO[ZConnectionPool, Throwable, Unit] = transaction {
+    execute(
+      sql"CREATE TABLE IF NOT EXISTS games(date DATE NOT NULL, season_year INT NOT NULL, playoff_round INT, home_team VARCHAR(3), away_team VARCHAR(3))"
+    )
+  }
 
   val createZIOPoolConfig: ULayer[ZConnectionPoolConfig] =
     ZLayer.succeed(ZConnectionPoolConfig.default)
@@ -144,7 +157,7 @@ object DataService {
         .grouped(5)
         .foreach(chunk => 
           Console.printLine(chunk.toList)
-          insertRows(chunk.toList)
+          //insertRows(chunk.toList)
         )
       _ <- ZIO.succeed(source.close())
       res <- select
@@ -166,7 +179,7 @@ object DataService {
   }
 
   // Should be implemented to replace the `val insertRows` example above. Replace `Any` by the proper case class.
-  def insertRows(games: List[Game]): ZIO[ZConnectionPool, Throwable, UpdateResult] = {
+  val insertRows: ZIO[ZConnectionPool, Throwable, UpdateResult] = {
     val rows: List[Game.Row] = games.map(_.toRow)
     transaction {
       insert(
@@ -183,9 +196,6 @@ object DataService {
       )
     }
   }
-
-  // Should be implemented to replace the `val insertRows` example above. Replace `Any` by the proper case class.
-  def insertRows(games: List[Any]): ZIO[ZConnectionPool, Throwable, UpdateResult] = ???
 
   val count: ZIO[ZConnectionPool, Throwable, Option[Int]] = transaction {
     selectOne(
