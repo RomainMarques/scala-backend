@@ -160,29 +160,13 @@ object DataService {
           gam = chunk.toList.map(line => line.game)
           pred2 = chunk.toList.map(line => line.prediction)
           Console.printLine("test2", games)
-          insertRows
-          insertPred
-          //insertIntoGameAndPred(chunk.toList)
+          insertRows *> insertPred
           }
         )
       _ <- ZIO.succeed(source.close())
       res <- select
     } yield res
   }
-
-  /*def insertIntoGameAndPred(element: List[Element]): ZIO[ZConnectionPool, Throwable, UpdateResult] = {
-    @tailrec
-    def insertRec(element: List[Element], accGame: List[Game], accPred: List[Prediction]): ZIO[ZConnectionPool, Throwable, UpdateResult] = {
-        element match
-            case x::xs => insertRec(xs, x.game::accGame, x.prediction::accPred)
-            case Nil => {
-              insertRows(accGame)
-              insertPred(accPred)
-              ZIO.succeed(Response.text("Ok").withStatus(Status.Ok))
-            }
-    }
-    insertRec(element, List(), List())
-  }*/
 
   def transformElement(line: Seq[String]): Option[Element] = {
     line match
@@ -226,6 +210,7 @@ object DataService {
   }
 
   def insertPred: ZIO[ZConnectionPool, Throwable, UpdateResult] = {
+    Console.printLine("pred", pred2)
     val rows: List[Prediction.Row] = pred2.map(_.toRow)
     transaction {
       insert(
