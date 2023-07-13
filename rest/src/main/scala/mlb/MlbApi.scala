@@ -10,6 +10,7 @@ import java.sql.Date
 import java.io.File
 import java.time.LocalDate
 import scala.annotation.tailrec
+import mlb.Element.*
 
 object MlbApi extends ZIOAppDefault {
 
@@ -54,8 +55,8 @@ object MlbApi extends ZIOAppDefault {
   }.withDefaultErrorResponse
 
   val appLogic: ZIO[ZConnectionPool & Server, Throwable, Unit] = for {
-    test <- create *> initDB("/Users/romainmarques/Documents/GitHub/scala-backend/files/mlb_elo_latest.csv")
-    _ <- createGames *> createPredictions *> insertRows *> insertPred
+    //test <- create *> initDB("/Users/romainmarques/Documents/GitHub/scala-backend/files/mlb_elo_latest.csv")
+    _ <- createGames *> createPredictions *> initDB("/Users/romainmarques/Documents/GitHub/scala-backend/files/mlb_elo_latest.csv") *> selectEverything
     _ <- Server.serve[ZConnectionPool](static ++ endpoints)
     
   } yield ()
@@ -102,11 +103,9 @@ object ApiService {
 
 object DataService {
 
-  val create: ZIO[ZConnectionPool, Throwable, Unit] = transaction {
-    execute(
-      sql"CREATE TABLE IF NOT EXISTS games(date DATE NOT NULL, season_year INT NOT NULL, playoff_round INT, home_team VARCHAR(3), away_team VARCHAR(3))"
-    )
-  }
+  var gam = List[Game]()
+  var pred2 = List[Prediction]()
+
 
   val createZIOPoolConfig: ULayer[ZConnectionPoolConfig] =
     ZLayer.succeed(ZConnectionPoolConfig.default)
@@ -144,43 +143,81 @@ object DataService {
   import SeasonYears.*
   import HomeTeams.*
   import AwayTeams.*
+  import HomeTeamsEloProb.*
+  import HomeTeamsRatingProb.*
 
   def initDB(csvPath: String): ZIO[ZConnectionPool, Throwable, List[Game]] = {
      for {
-      conn <- create
+      _ <- createGames *> createPredictions
       source <- ZIO.succeed(CSVReader.open(new File(csvPath))) // Open CSV
       stream <- ZStream
         .fromIterator[Seq[String]](source.iterator)
-        .take(10)
-        .map[Option[Game]](createGame)
-        .collectSome[Game]
-        .grouped(5)
-        .foreach(chunk => 
-          Console.printLine(chunk.toList)
-          //insertRows(chunk.toList)
+        .map[Option[Element]](transformElement)
+        .collectSome[Element]
+        .grouped(2)
+        .foreach(chunk => {
+          Console.printLine("chunk", chunk.toList)
+          gam = chunk.toList.map(line => line.game)
+          pred2 = chunk.toList.map(line => line.prediction)
+          Console.printLine("test2", games)
+          insertRows
+          insertPred
+          //insertIntoGameAndPred(chunk.toList)
+          }
         )
       _ <- ZIO.succeed(source.close())
       res <- select
     } yield res
   }
 
-  def createGame(line: Seq[String]): Option[Game] = {
+  /*def insertIntoGameAndPred(element: List[Element]): ZIO[ZConnectionPool, Throwable, UpdateResult] = {
+    @tailrec
+    def insertRec(element: List[Element], accGame: List[Game], accPred: List[Prediction]): ZIO[ZConnectionPool, Throwable, UpdateResult] = {
+        element match
+            case x::xs => insertRec(xs, x.game::accGame, x.prediction::accPred)
+            case Nil => {
+              insertRows(accGame)
+              insertPred(accPred)
+              ZIO.succeed(Response.text("Ok").withStatus(Status.Ok))
+            }
+    }
+    insertRec(element, List(), List())
+  }*/
+
+  def transformElement(line: Seq[String]): Option[Element] = {
     line match
-      case line if line.head == "date" => None
-      case line => Some(Game(
-        GameDate(LocalDate.parse(line(0))), 
-        SeasonYear(line(1).toInt), 
-        line(3).trim.toIntOption.map(
-          PlayoffRound.apply
-        ),
-        HomeTeam(line(4)), 
-        AwayTeam(line(5))
-      ))
+      case line if line.head == "date" => {
+        Console.printLine("header", line)
+        None
+      }
+      case line => {
+        Console.printLine("line", line)
+        Some(Element(
+          Game(
+            GameDate(LocalDate.parse(line(0))),
+            SeasonYear(line(1).toInt),
+            line(3).trim.toIntOption.map(
+              PlayoffRound.apply
+            ),
+            HomeTeam(line(4)),
+            AwayTeam(line(5))
+          ),
+          Prediction(
+            GameDate(LocalDate.parse(line(0))),
+            SeasonYear(line(1).toInt),
+            HomeTeam(line(4)),
+            AwayTeam(line(5)),
+            HomeTeamEloProb(line(8).toFloat),
+            HomeTeamRatingProb(line(20).toFloat)
+          )
+        ))
+      }
   }
 
-  // Should be implemented to replace the `val insertRows` example above. Replace `Any` by the proper case class.
-  val insertRows: ZIO[ZConnectionPool, Throwable, UpdateResult] = {
-    val rows: List[Game.Row] = games.map(_.toRow)
+  def insertRows: ZIO[ZConnectionPool, Throwable, UpdateResult] = {
+    Console.printLine("game", gam)
+    val rows: List[Game.Row] = gam.map(_.toRow)
+    Console.printLine("rows", rows)
     transaction {
       insert(
         sql"INSERT INTO games(date, season_year, playoff_round, home_team, away_team)".values[Game.Row](rows)
@@ -188,11 +225,11 @@ object DataService {
     }
   }
 
-  val insertPred: ZIO[ZConnectionPool, Throwable, UpdateResult] = {
-    val rows: List[Prediction.Row] = predictions.map(_.toRow)
+  def insertPred: ZIO[ZConnectionPool, Throwable, UpdateResult] = {
+    val rows: List[Prediction.Row] = pred2.map(_.toRow)
     transaction {
       insert(
-        sql"INSERT INTO predictions(date, season, homeTeam, awayTeam, homeTeamEloProb, homeTeamRatingProb)".values[mlb.Prediction.Row](rows)
+        sql"INSERT INTO predictions(date, season, homeTeam, awayTeam, homeTeamEloProb, homeTeamRatingProb)".values[Prediction.Row](rows)
       )
     }
   }
@@ -223,6 +260,14 @@ object DataService {
       selectOne(
         sql"SELECT date, season, homeTeam, awayTeam, homeTeamEloProb, homeTeamRatingProb FROM predictions WHERE homeTeam = ${HomeTeam.unapply(homeTeam)} and awayTeam = ${AwayTeam.unapply(awayTeam)} ORDER BY date DESC LIMIT 1".as[Prediction]
       )
+    }
+  }
+
+  def selectEverything : ZIO[ZConnectionPool, Throwable, List[Game]] = {
+    transaction {
+      selectAll(
+        sql"SELECT date, season_year, playoff_round, home_team, away_team FROM games".as[Game]
+      ).map(_.toList)
     }
   }
 }
