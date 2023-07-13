@@ -47,15 +47,14 @@ object MlbApi extends ZIOAppDefault {
       import zio.json.EncoderOps
       import Game._
       for {
-        allGames: List[Game] <- getAllGamesOfHomeTeam(HomeTeam(homeTeam))
-        res: Response = allGameResponse(allGames)
+        listGames: List[Game] <- getAllGamesOfHomeTeam(HomeTeam(homeTeam))
+        res: Response = allGameResponse(listGames)
       } yield res
     case _ =>
       ZIO.succeed(Response.text("Not Found").withStatus(Status.NotFound))
   }.withDefaultErrorResponse
 
   val appLogic: ZIO[ZConnectionPool & Server, Throwable, Unit] = for {
-    //test <- create *> initDB("/Users/romainmarques/Documents/GitHub/scala-backend/files/mlb_elo_latest.csv")
     _ <- createGames *> createPredictions *> initDB("/Users/romainmarques/Documents/GitHub/scala-backend/files/mlb_elo_latest.csv") *> selectEverything
     _ <- Server.serve[ZConnectionPool](static ++ endpoints)
     
@@ -97,14 +96,15 @@ object ApiService {
         case x::xs => getAllGames(xs, acc + x.toJson + "\n")
         case Nil => Response.json(acc).withStatus(Status.Ok)
     }
+    if(games.isEmpty) then return Response.text("No game found in historical data").withStatus(Status.NotFound)
     getAllGames(games, "")
   }
 }
 
 object DataService {
 
-  var gam = List[Game]()
-  var pred2 = List[Prediction]()
+  var allGames = List[Game]()
+  var predictions = List[Prediction]()
 
 
   val createZIOPoolConfig: ULayer[ZConnectionPoolConfig] =
@@ -156,33 +156,16 @@ object DataService {
         .collectSome[Element]
         .grouped(2)
         .foreach(chunk => {
-          Console.printLine("chunk", chunk.toList)
-          gam = chunk.toList.map(line => line.game)
-          pred2 = chunk.toList.map(line => line.prediction)
-          Console.printLine("test2", games)
+          allGames = chunk.toList.map(line => line.game)
+          predictions = chunk.toList.map(line => line.prediction)
           insertRows
           insertPred
-          //insertIntoGameAndPred(chunk.toList)
           }
         )
       _ <- ZIO.succeed(source.close())
       res <- select
     } yield res
   }
-
-  /*def insertIntoGameAndPred(element: List[Element]): ZIO[ZConnectionPool, Throwable, UpdateResult] = {
-    @tailrec
-    def insertRec(element: List[Element], accGame: List[Game], accPred: List[Prediction]): ZIO[ZConnectionPool, Throwable, UpdateResult] = {
-        element match
-            case x::xs => insertRec(xs, x.game::accGame, x.prediction::accPred)
-            case Nil => {
-              insertRows(accGame)
-              insertPred(accPred)
-              ZIO.succeed(Response.text("Ok").withStatus(Status.Ok))
-            }
-    }
-    insertRec(element, List(), List())
-  }*/
 
   def transformElement(line: Seq[String]): Option[Element] = {
     line match
@@ -215,9 +198,7 @@ object DataService {
   }
 
   def insertRows: ZIO[ZConnectionPool, Throwable, UpdateResult] = {
-    Console.printLine("game", gam)
-    val rows: List[Game.Row] = gam.map(_.toRow)
-    Console.printLine("rows", rows)
+    val rows: List[Game.Row] = allGames.map(_.toRow)
     transaction {
       insert(
         sql"INSERT INTO games(date, season_year, playoff_round, home_team, away_team)".values[Game.Row](rows)
@@ -226,7 +207,7 @@ object DataService {
   }
 
   def insertPred: ZIO[ZConnectionPool, Throwable, UpdateResult] = {
-    val rows: List[Prediction.Row] = pred2.map(_.toRow)
+    val rows: List[Prediction.Row] = predictions.map(_.toRow)
     transaction {
       insert(
         sql"INSERT INTO predictions(date, season, homeTeam, awayTeam, homeTeamEloProb, homeTeamRatingProb)".values[Prediction.Row](rows)

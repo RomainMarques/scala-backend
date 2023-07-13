@@ -139,9 +139,3 @@ object Game {
       )
     }
 }
-
-val games: List[Game] = List(
-  Game(GameDate(LocalDate.parse("2021-10-03")), SeasonYear(2023), None, HomeTeam("ATL"), AwayTeam("NYC")),
-  Game(GameDate(LocalDate.parse("2021-10-03")), SeasonYear(2023), None, HomeTeam("ATL"), AwayTeam("CHC")),
-  Game(GameDate(LocalDate.parse("2021-10-03")), SeasonYear(2023), None, HomeTeam("STL"), AwayTeam("CHC"))
-)
