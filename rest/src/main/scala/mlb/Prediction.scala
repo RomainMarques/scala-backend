@@ -61,7 +61,7 @@ object Prediction {
     (prediction.date, prediction.season, prediction.homeTeam, prediction.awayTeam, prediction.homeTeamEloProb, prediction.homeTeamRatingProb)
 
   extension (p: Prediction)
-    def homeTeamProb(): Float = mean(p)
+    def homeTeamWinningProb(): Float = mean(p)
   def mean(prediction: Prediction): Float =
     (HomeTeamEloProb.unapply(prediction.homeTeamEloProb) + HomeTeamRatingProb.unapply(prediction.homeTeamRatingProb)) / 2
 
